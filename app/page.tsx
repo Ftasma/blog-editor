@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   PenLine,
@@ -17,7 +17,14 @@ import {
   List,
   Plus,
   Edit,
-  Trash2
+  Trash2,
+  Heading1,
+  Heading2,
+  Heading3,
+  Bold,
+  Italic,
+  Link as LinkIcon,
+  Image as ImagePlus
 } from 'lucide-react'
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
@@ -110,7 +117,12 @@ export default function BlogWriterPage() {
   const [showToast, setShowToast] = useState(false)
   const [toastMessage, setToastMessage] = useState('Post saved successfully!')
   const [isHoveringSave, setIsHoveringSave] = useState(false)
-  const [isUploading, setIsUploading] = useState<{ avatar: boolean; featured: boolean }>({ avatar: false, featured: false })
+  const [isUploading, setIsUploading] = useState<{ avatar: boolean; featured: boolean; inline: boolean }>({
+    avatar: false,
+    featured: false,
+    inline: false
+  })
+  const contentRef = useRef<HTMLTextAreaElement>(null)
 
   // New State for List View
   const [viewMode, setViewMode] = useState<'list' | 'editor'>('list')
@@ -238,6 +250,84 @@ export default function BlogWriterPage() {
       console.error(err)
     } finally {
       setIsUploading(prev => ({ ...prev, [type]: false }))
+      if (e.target) e.target.value = ''
+    }
+  }
+
+  const insertAtCursor = (text: string) => {
+    const textarea = contentRef.current
+    if (!textarea) return
+
+    const start = textarea.selectionStart
+    const end = textarea.selectionEnd
+    const currentContent = formData.content
+
+    const newContent =
+      currentContent.substring(0, start) +
+      text +
+      currentContent.substring(end)
+
+    setFormData(prev => ({ ...prev, content: newContent }))
+
+    // Reset focus and cursor position after state update
+    setTimeout(() => {
+      textarea.focus()
+      textarea.setSelectionRange(start + text.length, start + text.length)
+    }, 0)
+  }
+
+  const handleToolbarAction = (type: string) => {
+    switch (type) {
+      case 'h1': insertAtCursor('\n# '); break
+      case 'h2': insertAtCursor('\n## '); break
+      case 'h3': insertAtCursor('\n### '); break
+      case 'bold': insertAtCursor('**bold text**'); break
+      case 'italic': insertAtCursor('*italic text*'); break
+      case 'list': insertAtCursor('\n- '); break
+      case 'link': insertAtCursor('[link text](url)'); break
+    }
+  }
+
+  const handleInlineImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setIsUploading(prev => ({ ...prev, inline: true }))
+
+    try {
+      const fileExt = file.name.split('.').pop()
+      const fileName = `inline_${Math.random().toString(36).substring(2, 15)}_${Date.now()}.${fileExt}`
+      const filePath = `uploads/inline/${fileName}`
+
+      const { data, error } = await supabase.storage
+        .from('images')
+        .upload(filePath, file)
+
+      if (error) throw error
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('images')
+        .getPublicUrl(filePath)
+
+      insertAtCursor(`\n![Image](${publicUrl})\n`)
+    } catch (err: any) {
+      alert(`Upload failed: ${err.message}`)
+    } finally {
+      setIsUploading(prev => ({ ...prev, inline: false }))
+      if (e.target) e.target.value = ''
+    }
+  }
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault()
+    const file = e.dataTransfer.files[0]
+    if (file && file.type.startsWith('image/')) {
+      const input = document.createElement('input')
+      input.type = 'file'
+      const dataTransfer = new DataTransfer()
+      dataTransfer.items.add(file)
+      input.files = dataTransfer.files
+      handleInlineImageUpload({ target: input } as any)
     }
   }
 
@@ -458,14 +548,42 @@ export default function BlogWriterPage() {
                   required
                 />
 
-                <div className="flex-1 flex flex-col min-h-[300px]">
+                <div className="flex-1 flex flex-col min-h-[400px]">
+                  {/* Markdown Toolbar */}
+                  <div className="flex flex-wrap items-center gap-1 p-2 mb-2 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl border border-zinc-200 dark:border-zinc-800">
+                    <button type="button" onClick={() => handleToolbarAction('h1')} className="p-2 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg transition-colors" title="Heading 1"><Heading1 className="w-4 h-4" /></button>
+                    <button type="button" onClick={() => handleToolbarAction('h2')} className="p-2 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg transition-colors" title="Heading 2"><Heading2 className="w-4 h-4" /></button>
+                    <button type="button" onClick={() => handleToolbarAction('h3')} className="p-2 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg transition-colors" title="Heading 3"><Heading3 className="w-4 h-4" /></button>
+                    <div className="w-px h-4 bg-zinc-300 dark:bg-zinc-700 mx-1" />
+                    <button type="button" onClick={() => handleToolbarAction('bold')} className="p-2 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg transition-colors" title="Bold"><Bold className="w-4 h-4" /></button>
+                    <button type="button" onClick={() => handleToolbarAction('italic')} className="p-2 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg transition-colors" title="Italic"><Italic className="w-4 h-4" /></button>
+                    <div className="w-px h-4 bg-zinc-300 dark:bg-zinc-700 mx-1" />
+                    <button type="button" onClick={() => handleToolbarAction('list')} className="p-2 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg transition-colors" title="List"><List className="w-4 h-4" /></button>
+                    <button type="button" onClick={() => handleToolbarAction('link')} className="p-2 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg transition-colors" title="Link"><LinkIcon className="w-4 h-4" /></button>
+
+                    <div className="relative overflow-hidden p-2 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg transition-colors cursor-pointer" title="Add Image">
+                      <ImagePlus className="w-4 h-4" />
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleInlineImageUpload}
+                        className="absolute inset-0 opacity-0 cursor-pointer"
+                        disabled={isUploading.inline}
+                      />
+                    </div>
+                    {isUploading.inline && <Loader2 className="w-4 h-4 animate-spin text-indigo-500 ml-2" />}
+                  </div>
+
                   <Textarea
+                    ref={contentRef}
                     label="Markdown Content"
                     name="content"
                     placeholder="## A New Era of Streaming&#10;&#10;Use markdown syntax here `##` for subheadings, `>` for quotes, etc."
                     className="flex-1 font-mono text-sm leading-relaxed"
                     value={formData.content}
                     onChange={handleChange}
+                    onDrop={handleDrop}
+                    onDragOver={(e) => e.preventDefault()}
                     required
                   />
                 </div>
